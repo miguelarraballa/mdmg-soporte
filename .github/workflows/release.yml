@@ -1,0 +1,72 @@
+# Al subir un tag vX.Y.Z se genera una release con todo compilado (vendor/ y public/build/),
+# lista para subir por FTP a un hosting compartido y terminar la instalación desde el navegador.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Symfony 8 (dependencia de Laravel 13) exige PHP >= 8.4.1 en el servidor.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_mysql, fileinfo, zip
+          tools: composer:v2
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Dependencias PHP (sin las de desarrollo)
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+        env:
+          # Sin .env: que los comandos de composer (filament:upgrade) no intenten usar la base de datos.
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+
+      - name: Compilar assets
+        run: |
+          npm install
+          npm run build
+
+      - name: Empaquetar
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "$VERSION" > VERSION
+
+          # Estructura de public_html: .htaccess raíz + la aplicación en app/
+          mkdir -p dist/app
+          cp deploy/raiz.htaccess dist/.htaccess
+          rsync -a ./ dist/app/ \
+            --exclude='/.git' --exclude='/.github' --exclude='/dist' --exclude='/deploy' \
+            --exclude='/node_modules' --exclude='/tests' --exclude='/.env' \
+            --exclude='/public/hot' --exclude='/storage/logs/*.log' \
+            --exclude='/phpunit.xml' --exclude='/.phpunit.result.cache' \
+            --exclude='/AGENTS.md' --exclude='/CLAUDE.md' --exclude='/.editorconfig'
+
+          # Ni cachés ni vistas compiladas del build (bootstrap/cache/packages.php sí: es el de --no-dev)
+          find dist/app/storage/framework -type f ! -name '.gitignore' -delete
+
+          cd dist && zip -qr "../mdmg-soporte-${GITHUB_REF_NAME}.zip" . && cd ..
+          echo "ZIP=mdmg-soporte-${GITHUB_REF_NAME}.zip" >> "$GITHUB_ENV"
+
+      - name: Publicar la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ZIP" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber

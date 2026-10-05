@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ComprobarInstalacion;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -12,6 +13,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Instalador web (sin SSH) y migraciones automáticas al subir una versión nueva.
+        $middleware->prepend(ComprobarInstalacion::class);
+
         $middleware->redirectGuestsTo(fn () => route('filament.portal.auth.login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {

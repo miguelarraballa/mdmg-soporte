@@ -1,0 +1,10 @@
+# Laravel en app/ sin poder cambiar el DocumentRoot: todo se sirve desde app/public
+RewriteEngine On
+
+# Bloquea el acceso directo a /app/... (.env, código, vendor...)
+RewriteCond %{THE_REQUEST} \s/+app(/|\?|\s) [NC]
+RewriteRule ^ - [F,L]
+
+# Envía el resto de peticiones a app/public (allí actúa el .htaccess de Laravel)
+RewriteCond %{REQUEST_URI} !^/app/public/
+RewriteRule ^(.*)$ app/public/$1 [L]
