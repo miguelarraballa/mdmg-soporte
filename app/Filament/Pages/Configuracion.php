@@ -3,11 +3,13 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Marca;
+use App\Services\ActualizacionService;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Concerns\HasUnsavedDataChangesAlert;
 use Filament\Pages\Page;
@@ -155,6 +157,7 @@ class Configuracion extends Page
     public function content(Schema $schema): Schema
     {
         return $schema->components([
+            $this->seccionVersion(),
             Form::make([EmbeddedSchema::make('form')])
                 ->id('form')
                 ->livewireSubmitHandler('guardar')
@@ -169,9 +172,62 @@ class Configuracion extends Page
         ]);
     }
 
+    /** Versión instalada (APP_VERSION) frente al último tag del repositorio. */
+    private function seccionVersion(): Section
+    {
+        $ultima = ActualizacionService::ultima();
+        $hayActualizacion = ActualizacionService::hayActualizacion();
+
+        return Section::make('Versión')
+            ->columns(3)
+            ->schema([
+                TextEntry::make('version_instalada')
+                    ->label('Instalada')
+                    ->state('v' . ActualizacionService::instalada()),
+                TextEntry::make('version_ultima')
+                    ->label('Última publicada')
+                    ->state($ultima ? 'v' . $ultima : 'No se pudo consultar')
+                    ->url(ActualizacionService::urlTags(), shouldOpenInNewTab: true),
+                TextEntry::make('version_estado')
+                    ->label('Estado')
+                    ->badge()
+                    ->state(match (true) {
+                        $ultima === null => 'Desconocido',
+                        $hayActualizacion => 'Hay una actualización disponible',
+                        default => 'Al día',
+                    })
+                    ->color(match (true) {
+                        $ultima === null => 'gray',
+                        $hayActualizacion => 'warning',
+                        default => 'success',
+                    })
+                    ->icon($hayActualizacion ? Heroicon::OutlinedArrowDownTray : null),
+            ]);
+    }
+
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('comprobarActualizaciones')
+                ->label('Comprobar actualizaciones')
+                ->icon(Heroicon::OutlinedArrowPath)
+                ->color('gray')
+                ->action(function (): void {
+                    ActualizacionService::olvidar();
+
+                    Notification::make()
+                        ->title(match (true) {
+                            ActualizacionService::ultima() === null => 'No se pudo consultar el repositorio',
+                            ActualizacionService::hayActualizacion() => 'Hay una actualización disponible: v' . ActualizacionService::ultima(),
+                            default => 'La aplicación está al día',
+                        })
+                        ->status(match (true) {
+                            ActualizacionService::ultima() === null => 'danger',
+                            ActualizacionService::hayActualizacion() => 'warning',
+                            default => 'success',
+                        })
+                        ->send();
+                }),
             Action::make('restaurar')
                 ->label('Restaurar valores del manual')
                 ->color('gray')

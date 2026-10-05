@@ -14,6 +14,10 @@ return [
     */
 
     'name' => env('APP_NAME', 'MDMG Soporte'),
+    'version' => env('APP_VERSION', '1.0.0'),
+
+    // Repositorio de GitHub (owner/repo) cuyos tags se comparan con la versión instalada.
+    'repositorio' => env('APP_REPOSITORIO', 'miguelarraballa/mdmg-soporte'),
 
     /*
     |--------------------------------------------------------------------------
