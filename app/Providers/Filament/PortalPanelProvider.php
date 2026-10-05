@@ -2,13 +2,13 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Marca;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -23,16 +23,13 @@ class PortalPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        return Marca::aplicar($panel)
             ->id('portal')
             ->path('portal')
             ->login()
             ->passwordReset()
             ->profile(isSimple: false)
-            ->brandName(config('app.name') . ' · Soporte')
-            ->colors([
-                'primary' => Color::Amber,
-            ])
+            ->brandName(fn () => config('app.name') . ' · Soporte')
             ->discoverResources(in: app_path('Filament/Portal/Resources'), for: 'App\Filament\Portal\Resources')
             ->middleware([
                 EncryptCookies::class,

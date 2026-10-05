@@ -47,6 +47,16 @@ return [
             'report' => false,
         ],
 
+        // Icono y logotipo de la app (configuración del admin). Se sirven directamente desde public/.
+        'marca' => [
+            'driver' => 'local',
+            'root' => public_path('images/marca'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/images/marca',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

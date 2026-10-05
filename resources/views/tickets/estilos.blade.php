@@ -34,6 +34,11 @@
         color: var(--tk-texto); border: 1px solid var(--tk-acento);
     }
     .tk-msg__fecha { margin-left: auto; color: var(--gray-500); white-space: nowrap; }
+    /* Cabecera de los mensajes del admin (soporte): fondo negro y texto blanco */
+    .tk-msg--soporte .tk-msg__cabecera { background: #000; border-bottom-color: #000; }
+    .tk-msg--soporte :is(.tk-msg__autor, .tk-msg__fecha) { color: #fff; }
+    .tk-msg--soporte .tk-msg__rol { background: #fff; color: #000; }
+    .tk-msg--soporte .tk-msg__ultimo { color: #fff; border-color: #fff; }
     .tk-msg__cuerpo { padding: 0.875rem 1rem; }
     .tk-msg__cuerpo > .fi-prose { font-size: 0.875rem; }
 
@@ -79,4 +84,10 @@
     :where(.dark) .tk-msg__autor { color: #fff; }
     :where(.dark) .tk-msg__rol { color: var(--gray-950); }
     :where(.dark) .tk-msg__fecha { color: var(--gray-400); }
+
+    /* Cabecera del admin en modo oscuro: gris 40 % (#999) con letras negras */
+    :where(.dark) .tk-msg--soporte .tk-msg__cabecera { background: #999; border-bottom-color: #999; }
+    :where(.dark) .tk-msg--soporte :is(.tk-msg__autor, .tk-msg__fecha) { color: #000; }
+    :where(.dark) .tk-msg--soporte .tk-msg__rol { background: #000; color: #fff; }
+    :where(.dark) .tk-msg--soporte .tk-msg__ultimo { color: #000; border-color: #000; }
 </style>
