@@ -1,10 +1,10 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "mdmg/soporte",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
-    "license": "MIT",
+    "description": "MDMG Soporte: sistema de tickets de soporte con integración con Slack y email.",
+    "keywords": ["soporte", "tickets", "slack", "email"],
+    "license": "proprietary",
     "require": {
         "php": "^8.3",
         "filament/filament": "^5.9",
