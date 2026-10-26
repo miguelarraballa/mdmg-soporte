@@ -54,7 +54,8 @@ jobs:
             --exclude='/node_modules' --exclude='/tests' --exclude='/.env' \
             --exclude='/public/hot' --exclude='/storage/logs/*.log' \
             --exclude='/phpunit.xml' --exclude='/.phpunit.result.cache' \
-            --exclude='/AGENTS.md' --exclude='/CLAUDE.md' --exclude='/.editorconfig'
+            --exclude='/AGENTS.md' --exclude='/CLAUDE.md' --exclude='/.editorconfig' \
+            --exclude='/.claude' --exclude='/.mcp.json' --exclude='/boost.json'
 
           # Ni cachés ni vistas compiladas del build (bootstrap/cache/packages.php sí: es el de --no-dev)
           find dist/app/storage/framework -type f ! -name '.gitignore' -delete

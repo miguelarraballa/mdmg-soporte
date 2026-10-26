@@ -25,7 +25,7 @@ Requisitos: PHP 8.4 o superior con `pdo_mysql`, `mbstring`, `openssl`, `intl`, `
 
 Al terminar, `/instalar` deja de estar disponible. El resto de ajustes (correo, Slack) se configuran en el `.env` por FTP.
 
-Para las notificaciones por email y Slack hace falta un cron que ejecute cada minuto `php artisan schedule:run` (la mayoría de paneles de hosting permiten añadir cron jobs sin SSH).
+Para las notificaciones por email y Slack hace falta un cron que ejecute cada minuto `php artisan schedule:run` (la mayoría de paneles de hosting permiten añadir cron jobs sin SSH). El scheduler también procesa la cola de Laravel (`queue:work --stop-when-empty`), por donde salen los emails de Filament como la recuperación de contraseña.
 
 ## Actualizar
 
