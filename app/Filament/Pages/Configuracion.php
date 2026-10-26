@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Marca;
 use App\Services\ActualizacionService;
+use App\Support\Actualizador;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
@@ -16,7 +17,6 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
-use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -55,6 +55,38 @@ class Configuracion extends Page
     public function mount(): void
     {
         $this->rellenar();
+        $this->avisarResultadoActualizacion();
+    }
+
+    /** Resultado que deja public/actualizar.php al terminar de sustituir el código. */
+    private function avisarResultadoActualizacion(): void
+    {
+        $resultado = Actualizador::resultado();
+
+        if ($resultado === null) {
+            return;
+        }
+
+        $accion = $resultado['accion'] === 'restaurar' ? 'Restaurada' : 'Actualizada';
+
+        if (! $resultado['ok']) {
+            Notification::make()
+                ->title('No se pudo completar: se mantiene la versión actual')
+                ->body($resultado['error'] ?? null)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        ActualizacionService::olvidar();
+
+        Notification::make()->title("{$accion} a v{$resultado['version']}")->success()->send();
+
+        foreach ($resultado['avisos'] ?? [] as $aviso) {
+            Notification::make()->title('Revisa el .htaccess raíz')->body($aviso)->warning()->persistent()->send();
+        }
     }
 
     protected function hasUnsavedDataChangesAlert(): bool
@@ -172,7 +204,7 @@ class Configuracion extends Page
         ]);
     }
 
-    /** Versión instalada (APP_VERSION) frente al último tag del repositorio. */
+    /** Versión instalada (APP_VERSION) frente a la última release del repositorio. */
     private function seccionVersion(): Section
     {
         $ultima = ActualizacionService::ultima();
@@ -183,11 +215,11 @@ class Configuracion extends Page
             ->schema([
                 TextEntry::make('version_instalada')
                     ->label('Instalada')
-                    ->state('v' . ActualizacionService::instalada()),
+                    ->state('v'.ActualizacionService::instalada()),
                 TextEntry::make('version_ultima')
                     ->label('Última publicada')
-                    ->state($ultima ? 'v' . $ultima : 'No se pudo consultar')
-                    ->url(ActualizacionService::urlTags(), shouldOpenInNewTab: true),
+                    ->state($ultima ? 'v'.$ultima : 'No se pudo consultar')
+                    ->url(ActualizacionService::urlReleases(), shouldOpenInNewTab: true),
                 TextEntry::make('version_estado')
                     ->label('Estado')
                     ->badge()
@@ -218,7 +250,7 @@ class Configuracion extends Page
                     Notification::make()
                         ->title(match (true) {
                             ActualizacionService::ultima() === null => 'No se pudo consultar el repositorio',
-                            ActualizacionService::hayActualizacion() => 'Hay una actualización disponible: v' . ActualizacionService::ultima(),
+                            ActualizacionService::hayActualizacion() => 'Hay una actualización disponible: v'.ActualizacionService::ultima(),
                             default => 'La aplicación está al día',
                         })
                         ->status(match (true) {
@@ -228,6 +260,25 @@ class Configuracion extends Page
                         })
                         ->send();
                 }),
+            Action::make('actualizar')
+                ->label(fn () => 'Actualizar a v'.ActualizacionService::ultima())
+                ->icon(Heroicon::OutlinedArrowDownTray)
+                ->visible(fn () => ActualizacionService::hayActualizacion())
+                ->requiresConfirmation()
+                ->modalHeading(fn () => 'Actualizar a v'.ActualizacionService::ultima())
+                ->modalDescription('Se descarga la versión de GitHub, se verifica su firma y se sustituye el código. El .env, los archivos subidos y la base de datos se conservan, y la versión actual queda guardada para poder volver a ella.')
+                ->modalSubmitActionLabel('Actualizar')
+                ->action(fn () => $this->redirect(ActualizarAplicacion::getUrl())),
+            Action::make('restaurarVersion')
+                ->label(fn () => 'Volver a v'.Actualizador::versionAnterior())
+                ->icon(Heroicon::OutlinedArrowUturnLeft)
+                ->color('gray')
+                ->visible(fn () => Actualizador::versionAnterior() !== null && ! is_dir(base_path('.git')))
+                ->requiresConfirmation()
+                ->modalHeading(fn () => 'Volver a v'.Actualizador::versionAnterior())
+                ->modalDescription('Se recupera el código de la versión anterior. Las migraciones de la base de datos no se deshacen.')
+                ->modalSubmitActionLabel('Volver a la versión anterior')
+                ->action(fn () => $this->redirect(Actualizador::prepararRestauracion(static::getUrl()))),
             Action::make('restaurar')
                 ->label('Restaurar valores del manual')
                 ->color('gray')

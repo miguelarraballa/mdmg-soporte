@@ -17,8 +17,12 @@ return [
     // El archivo VERSION lo genera la release de GitHub a partir del tag (ver .github/workflows/release.yml).
     'version' => is_file(base_path('VERSION')) ? trim(file_get_contents(base_path('VERSION'))) : env('APP_VERSION', '1.0.0'),
 
-    // Repositorio de GitHub (owner/repo) cuyos tags se comparan con la versión instalada.
+    // Repositorio de GitHub (owner/repo) cuya última release se compara con la versión instalada.
     'repositorio' => env('APP_REPOSITORIO', 'miguelarraballa/mdmg-soporte'),
+
+    // Clave pública ed25519 (base64) con la que se verifica el zip de cada release antes de instalarlo
+    // desde Configuración. La privada es el secreto RELEASE_FIRMA_CLAVE del repositorio (ver release.yml).
+    'clave_firma' => '3eJrc9z59rWD7wLna4Q9FZ5YgfSixxiyTH7eIN8ana4=',
 
     /*
     |--------------------------------------------------------------------------
