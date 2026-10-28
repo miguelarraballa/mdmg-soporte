@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Marca;
+use App\Filament\Shared\VerManual;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -29,8 +30,11 @@ class PortalPanelProvider extends PanelProvider
             ->login()
             ->passwordReset()
             ->profile(isSimple: false)
-            ->brandName(fn () => config('app.name') . ' · Soporte')
+            ->brandName(fn () => config('app.name').' · Soporte')
             ->discoverResources(in: app_path('Filament/Portal/Resources'), for: 'App\Filament\Portal\Resources')
+            ->pages([
+                VerManual::class,
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

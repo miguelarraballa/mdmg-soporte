@@ -21,6 +21,12 @@ class Servicio extends Model
         'activo' => 'bool',
     ];
 
+    protected static function booted(): void
+    {
+        // Borrar los manuales uno a uno para que también se eliminen sus archivos.
+        static::deleting(fn (Servicio $servicio) => $servicio->manuales()->get()->each->delete());
+    }
+
     public function clientes(): BelongsToMany
     {
         return $this->belongsToMany(User::class)->withTimestamps();
@@ -29,6 +35,11 @@ class Servicio extends Model
     public function tickets(): HasMany
     {
         return $this->hasMany(Ticket::class);
+    }
+
+    public function manuales(): HasMany
+    {
+        return $this->hasMany(Manual::class);
     }
 
     public function scopeActivos(Builder $query): Builder
