@@ -43,7 +43,7 @@ class ScriptActualizarTest extends TestCase
 
     protected function tearDown(): void
     {
-        exec('rm -rf '.escapeshellarg($this->base));
+        exec('chmod -R u+w '.escapeshellarg($this->base).' && rm -rf '.escapeshellarg($this->base));
 
         parent::tearDown();
     }
@@ -110,6 +110,47 @@ class ScriptActualizarTest extends TestCase
         $this->assertSame('viejo', $this->leer('app/Viejo.php'));
         $this->assertSame('mi logo', $this->leer('public/images/marca/subidas/logo.png'));
         $this->assertSame('1.1.0', $this->leer("{$anterior}/VERSION"));
+    }
+
+    /** Hosting con PHP como otro usuario: puede escribir en la carpeta de la app pero no en las de código. */
+    public function test_aparta_junto_al_codigo_las_carpetas_que_php_no_puede_mover(): void
+    {
+        chmod("{$this->base}/public/images/marca", 0555);
+        chmod("{$this->base}/public", 0555);
+        chmod("{$this->base}/app", 0555);
+
+        $this->assertSame([], mdmg_aplicar_plan($this->base, $this->plan()));
+
+        $this->assertSame('1.1.0', $this->leer('VERSION'));
+        $this->assertSame('nuevo', $this->leer('app/Nuevo.php'));
+        $this->assertSame('index nuevo', $this->leer('public/index.php'));
+        $this->assertSame('mi logo', $this->leer('public/images/marca/subidas/logo.png'));
+
+        $manifiesto = json_decode($this->leer('storage/app/actualizacion/anterior/.actualizacion.json'), true);
+        $this->assertSame(['app', 'public'], array_keys($manifiesto['en_base']));
+        $this->assertSame('viejo', $this->leer($manifiesto['en_base']['app'].'/Viejo.php'));
+        $this->assertSame('1.0.0', $this->leer('storage/app/actualizacion/anterior/VERSION'));
+
+        // Restaurar recupera las carpetas apartadas junto al código
+        mdmg_aplicar_plan($this->base, $this->plan([
+            'accion' => 'restaurar',
+            'origen' => 'storage/app/actualizacion/anterior',
+            'entradas' => ['VERSION', 'app', 'public'],
+            'en_base' => $manifiesto['en_base'],
+        ]));
+
+        $this->assertSame('1.0.0', $this->leer('VERSION'));
+        $this->assertSame('viejo', $this->leer('app/Viejo.php'));
+        $this->assertSame('index viejo', $this->leer('public/index.php'));
+        $this->assertSame('mi logo', $this->leer('public/images/marca/subidas/logo.png'));
+        $this->assertDirectoryDoesNotExist("{$this->base}/{$manifiesto['en_base']['app']}");
+    }
+
+    public function test_rechaza_carpetas_en_base_que_no_son_ocultas(): void
+    {
+        $this->expectException(RuntimeException::class);
+
+        mdmg_aplicar_plan($this->base, $this->plan(['en_base' => ['app' => 'storage']]));
     }
 
     public function test_si_falla_a_mitad_deshace_lo_movido(): void

@@ -54,8 +54,45 @@ function mdmg_ruta(string $ruta, bool $enCarpeta = false): string
 }
 
 /**
+ * Nombre de una carpeta apartada junto al código (copia de seguridad que no se pudo sacar de la app).
+ */
+function mdmg_nombre_en_base(string $nombre): string
+{
+    if (! str_starts_with($nombre, '.') || str_contains($nombre, '/')) {
+        throw new RuntimeException("Ruta no válida en el plan: {$nombre}");
+    }
+
+    return mdmg_ruta($nombre);
+}
+
+/** Copia un archivo, enlace o carpeta (para lo que se conserva y PHP no puede mover). */
+function mdmg_copiar(string $de, string $a): void
+{
+    if (is_link($de)) {
+        $ok = @symlink((string) readlink($de), $a);
+    } elseif (is_dir($de)) {
+        $ok = is_dir($a) || @mkdir($a, 0755, true);
+
+        foreach (array_diff(scandir($de) ?: [], ['.', '..']) as $hijo) {
+            mdmg_copiar($de.'/'.$hijo, $a.'/'.$hijo);
+        }
+    } else {
+        $ok = @copy($de, $a);
+    }
+
+    if (! $ok) {
+        throw new RuntimeException('No se pudo copiar '.basename($de).'. No se ha cambiado nada.');
+    }
+}
+
+/**
  * Pone en la app las entradas de «origen» y deja las actuales en «copia», que acaba siendo «final»
  * (la copia de seguridad que permite restaurar). Devuelve los avisos que no impiden la actualización.
+ *
+ * En hostings donde PHP se ejecuta con otro usuario que el del FTP, PHP puede escribir en la carpeta de
+ * la app pero no en las carpetas de código subidas por FTP. Una carpeta así no se puede mover a otra
+ * (habría que actualizar su «..»), pero sí renombrar dentro de la misma: se aparta como «.nombre.anterior-…»
+ * junto al código y el manifiesto lo apunta en «en_base» para poder restaurarla.
  *
  * @return list<string>
  */
@@ -66,6 +103,7 @@ function mdmg_aplicar_plan(string $base, array $plan): array
     $final = $base.'/'.mdmg_ruta((string) $plan['final'], true);
     $entradas = array_map(fn ($entrada) => mdmg_ruta((string) $entrada), (array) $plan['entradas']);
     $conservar = array_map(fn ($ruta) => mdmg_ruta((string) $ruta), (array) ($plan['conservar'] ?? []));
+    $origenEnBase = array_map(fn ($nombre) => mdmg_nombre_en_base((string) $nombre), (array) ($plan['en_base'] ?? []));
 
     if (! is_dir($origen) || $entradas === []) {
         throw new RuntimeException('No se encuentran los archivos de la versión que se iba a instalar.');
@@ -75,7 +113,17 @@ function mdmg_aplicar_plan(string $base, array $plan): array
         throw new RuntimeException('No se pudo preparar la copia de seguridad de la versión actual.');
     }
 
+    // Dónde está cada entrada (o ruta dentro de ella) de la versión que se instala.
+    $enOrigen = function (string $ruta) use ($base, $origen, $origenEnBase): string {
+        [$entrada, $resto] = array_pad(explode('/', $ruta, 2), 2, null);
+        $raiz = isset($origenEnBase[$entrada]) ? $base.'/'.$origenEnBase[$entrada] : $origen.'/'.$entrada;
+
+        return $resto === null ? $raiz : $raiz.'/'.$resto;
+    };
+
     $version = is_file($base.'/VERSION') ? trim((string) file_get_contents($base.'/VERSION')) : '';
+    $sufijo = 'anterior-'.time();
+    $enBase = [];
     $hechos = [];
     $mover = function (string $de, string $a) use (&$hechos): void {
         if (! @rename($de, $a)) {
@@ -87,30 +135,59 @@ function mdmg_aplicar_plan(string $base, array $plan): array
 
     try {
         // Lo que no viene en el zip (logos subidos, enlaces de storage) pasa del código actual al nuevo.
+        // Si PHP no puede sacarlo de su carpeta, se copia (el original queda en la copia de seguridad).
         foreach ($conservar as $indice => $ruta) {
             if (! file_exists($base.'/'.$ruta) && ! is_link($base.'/'.$ruta)) {
                 continue;
             }
 
-            $destino = $origen.'/'.$ruta;
+            $destino = $enOrigen($ruta);
 
             if (file_exists($destino) || is_link($destino)) {
-                $mover($destino, $copia.'/.descartado-'.$indice);
+                if (! @rename($destino, $copia.'/.descartado-'.$indice)) {
+                    // No se puede apartar (su carpeta es de otro usuario): se copia lo actual encima.
+                    if (! is_link($destino)) {
+                        mdmg_copiar($base.'/'.$ruta, $destino);
+                    }
+
+                    continue;
+                }
+
+                $hechos[] = [$destino, $copia.'/.descartado-'.$indice];
             }
 
             if (! is_dir(dirname($destino)) && ! @mkdir(dirname($destino), 0755, true)) {
                 throw new RuntimeException('No se pudo preparar '.dirname($ruta).'. No se ha cambiado nada.');
             }
 
-            $mover($base.'/'.$ruta, $destino);
+            if (@rename($base.'/'.$ruta, $destino)) {
+                $hechos[] = [$base.'/'.$ruta, $destino];
+            } else {
+                mdmg_copiar($base.'/'.$ruta, $destino);
+            }
         }
 
         foreach ($entradas as $entrada) {
-            if (file_exists($base.'/'.$entrada) || is_link($base.'/'.$entrada)) {
-                $mover($base.'/'.$entrada, $copia.'/'.$entrada);
+            $actual = $base.'/'.$entrada;
+
+            if (file_exists($actual) || is_link($actual)) {
+                if (@rename($actual, $copia.'/'.$entrada)) {
+                    $hechos[] = [$actual, $copia.'/'.$entrada];
+                } elseif (is_dir($actual) && ! is_link($actual)) {
+                    $nombre = '.'.$entrada.'.'.$sufijo;
+
+                    if (file_exists($base.'/'.$nombre)) {
+                        throw new RuntimeException('Ya existe '.$nombre.'. No se ha cambiado nada.');
+                    }
+
+                    $mover($actual, $base.'/'.$nombre);
+                    $enBase[$entrada] = $nombre;
+                } else {
+                    throw new RuntimeException('No se pudo mover '.$entrada.'. No se ha cambiado nada.');
+                }
             }
 
-            $mover($origen.'/'.$entrada, $base.'/'.$entrada);
+            $mover($enOrigen($entrada), $actual);
         }
     } catch (Throwable $e) {
         foreach (array_reverse($hechos) as [$de, $a]) {
@@ -120,7 +197,11 @@ function mdmg_aplicar_plan(string $base, array $plan): array
         throw $e;
     }
 
-    file_put_contents($copia.'/.actualizacion.json', json_encode(['version' => $version, 'entradas' => $entradas]));
+    file_put_contents($copia.'/.actualizacion.json', json_encode(array_filter([
+        'version' => $version,
+        'entradas' => $entradas,
+        'en_base' => $enBase,
+    ], fn ($valor) => $valor !== [])));
 
     // La copia de seguridad anterior se aparta (Laravel la borra después) y esta ocupa su lugar.
     if (file_exists($final)) {

@@ -2,17 +2,20 @@
 
 namespace App\Support;
 
+use FilesystemIterator;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use PharData;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
 use Throwable;
 use ZipArchive;
 
 /**
  * Actualización desde Configuración, sin FTP: descarga el zip de la última release de GitHub, verifica su
- * firma ed25519, lo extrae en storage/app/actualizacion y deja un plan que ejecuta public/actualizar.php,
+ * firma ed25519 (con sodium u openssl), lo extrae en storage/app/actualizacion y deja un plan que ejecuta public/actualizar.php,
  * que sustituye las carpetas de código sin cargar Laravel. La versión sustituida queda en
  * storage/app/actualizacion/anterior para poder restaurarla.
  */
@@ -24,6 +27,12 @@ class Actualizador
     private const ESPACIO_MINIMO = 300 * 1024 * 1024;
 
     private const MINUTOS_PLAN = 10;
+
+    private const BYTES_FIRMA = 64;
+
+    private const BYTES_CLAVE = 32;
+
+    private const DER_CLAVE_ED25519 = '302a300506032b6570032100';
 
     private const MARCA_INICIO = '# BEGIN MDMG Soporte';
 
@@ -51,8 +60,8 @@ class Actualizador
             $pendientes[] = 'Falta la extensión «zip» de PHP.';
         }
 
-        if (! function_exists('sodium_crypto_sign_verify_detached')) {
-            $pendientes[] = 'Falta la extensión «sodium» de PHP, necesaria para verificar la firma.';
+        if (! function_exists('sodium_crypto_sign_verify_detached') && ! defined('OPENSSL_KEYTYPE_ED25519')) {
+            $pendientes[] = 'Falta la extensión «openssl» de PHP, necesaria para verificar la firma.';
         }
 
         if (blank(config('app.clave_firma'))) {
@@ -65,10 +74,11 @@ class Actualizador
             $pendientes[] = sprintf('Hacen falta al menos %d MB libres en disco (hay %d MB).', self::ESPACIO_MINIMO / 1048576, $libre / 1048576);
         }
 
-        // Para mover una carpeta hace falta permiso de escritura en ella y en la carpeta que la contiene.
-        foreach ([base_path(), storage_path('app'), ...self::entradas(base_path())] as $ruta) {
+        // Basta con poder escribir en la carpeta de la app: public/actualizar.php renombra en ella las
+        // carpetas de código que PHP no puede mover (p. ej. subidas por FTP con otro usuario).
+        foreach ([base_path(), storage_path('app')] as $ruta) {
             if (! is_writable($ruta)) {
-                $pendientes[] = 'Sin permiso de escritura: '.str_replace(dirname(base_path()).'/', '', $ruta);
+                $pendientes[] = 'PHP no puede escribir en '.str_replace(dirname(base_path()).'/', '', $ruta).'. Dale los mismos permisos que a la carpeta storage.';
             }
         }
 
@@ -120,18 +130,32 @@ class Actualizador
         }
     }
 
-    /** La firma cubre el SHA-256 del zip, así no hace falta cargarlo entero en memoria. */
-    public static function firmaValida(string $zip, string $firma, string $clavePublica): bool
+    /**
+     * La firma cubre el SHA-256 del zip, así no hace falta cargarlo entero en memoria. Se verifica con
+     * sodium o, si el hosting no la tiene, con openssl (ed25519 desde PHP 8.4; Laravel ya exige openssl).
+     */
+    public static function firmaValida(string $zip, string $firma, string $clavePublica, ?bool $conSodium = null): bool
     {
         $firma = base64_decode(trim($firma), true);
         $clave = base64_decode($clavePublica, true);
 
         if (! is_file($zip) || $firma === false || $clave === false
-            || strlen($firma) !== SODIUM_CRYPTO_SIGN_BYTES || strlen($clave) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) {
+            || strlen($firma) !== self::BYTES_FIRMA || strlen($clave) !== self::BYTES_CLAVE) {
             return false;
         }
 
-        return sodium_crypto_sign_verify_detached($firma, hash_file('sha256', $zip, true), $clave);
+        $mensaje = hash_file('sha256', $zip, true);
+
+        if ($conSodium ?? function_exists('sodium_crypto_sign_verify_detached')) {
+            return sodium_crypto_sign_verify_detached($firma, $mensaje, $clave);
+        }
+
+        // Clave ed25519 en bruto → PEM (cabecera DER SubjectPublicKeyInfo de ed25519 + los 32 bytes).
+        $pem = "-----BEGIN PUBLIC KEY-----\n"
+            .chunk_split(base64_encode(hex2bin(self::DER_CLAVE_ED25519).$clave), 64, "\n")
+            ."-----END PUBLIC KEY-----\n";
+
+        return openssl_verify($mensaje, $firma, $pem, 0) === 1;
     }
 
     public static function extraer(string $version): void
@@ -164,6 +188,34 @@ class Actualizador
 
         if (trim((string) @file_get_contents("{$app}/VERSION")) !== $version) {
             throw new RuntimeException("El zip no corresponde a la versión v{$version}.");
+        }
+
+        self::igualarPermisos($app);
+    }
+
+    /**
+     * Si PHP se ejecuta con otro usuario que el dueño de la app (hostings con PHP como «nobody»), el código
+     * nuevo sería de PHP y por FTP ya no se podría sobrescribir. En ese caso se le dan los mismos permisos
+     * que tiene la carpeta de la app, que son los que el hosting ya permite.
+     */
+    private static function igualarPermisos(string $app): void
+    {
+        if (@fileowner($app) === @fileowner(base_path())) {
+            return;
+        }
+
+        $modo = fileperms(base_path()) & 0777;
+        $elementos = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($app, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST,
+        );
+
+        @chmod($app, $modo);
+
+        foreach ($elementos as $elemento) {
+            if (! $elemento->isLink()) {
+                @chmod($elemento->getPathname(), $elemento->isDir() ? $modo : $modo & 0666);
+            }
         }
     }
 
@@ -205,6 +257,7 @@ class Actualizador
             'version' => (string) $manifiesto['version'],
             'origen' => self::relativa(self::carpeta('anterior')),
             'entradas' => array_values($manifiesto['entradas']),
+            'en_base' => (array) ($manifiesto['en_base'] ?? []),
         ], $volver);
     }
 
@@ -235,11 +288,27 @@ class Actualizador
 
         foreach (File::directories(self::carpeta()) as $carpeta) {
             if (basename($carpeta) !== 'anterior') {
+                self::borrarApartadasEnBase($carpeta);
                 File::deleteDirectory($carpeta);
             }
         }
 
         @unlink(self::carpeta('plan.json'));
+    }
+
+    /**
+     * Una copia de seguridad descartada puede tener carpetas renombradas junto al código («en_base»).
+     * Se borran si se puede: si las subió otro usuario por FTP, PHP quizá no pueda y quedan ocultas.
+     */
+    private static function borrarApartadasEnBase(string $copia): void
+    {
+        $manifiesto = json_decode((string) @file_get_contents("{$copia}/.actualizacion.json"), true);
+
+        foreach ((array) ($manifiesto['en_base'] ?? []) as $nombre) {
+            if (is_string($nombre) && preg_match('/^\.[A-Za-z0-9_-][A-Za-z0-9._-]*$/', $nombre)) {
+                File::deleteDirectory(base_path($nombre));
+            }
+        }
     }
 
     private static function escribirPlan(array $plan, string $volver): string
