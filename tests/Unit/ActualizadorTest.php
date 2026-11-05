@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Support\Actualizador;
+use ParagonIE_Sodium_Compat;
 use PHPUnit\Framework\TestCase;
 
 class ActualizadorTest extends TestCase
@@ -58,17 +59,24 @@ class ActualizadorTest extends TestCase
         $this->assertFalse(Actualizador::firmaValida($this->zip, $this->firmar($this->zip, $otra), $this->clavePublica));
     }
 
-    /** Hostings sin la extensión sodium: la misma firma se verifica con openssl. */
-    public function test_verifica_la_firma_con_openssl_sin_sodium(): void
+    /** Hostings sin la extensión sodium: la misma firma se verifica con el ed25519 en PHP puro. */
+    public function test_verifica_la_firma_sin_la_extension_sodium(): void
     {
         $firma = $this->firmar($this->zip, $this->clavePrivada);
         $otra = sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair());
+        $conOtraClave = $this->firmar($this->zip, $otra);
 
-        $this->assertTrue(Actualizador::firmaValida($this->zip, $firma, $this->clavePublica, conSodium: false));
-        $this->assertFalse(Actualizador::firmaValida($this->zip, $this->firmar($this->zip, $otra), $this->clavePublica, conSodium: false));
+        ParagonIE_Sodium_Compat::$disableFallbackForUnitTests = true;
 
-        file_put_contents($this->zip, 'x', FILE_APPEND);
-        $this->assertFalse(Actualizador::firmaValida($this->zip, $firma, $this->clavePublica, conSodium: false));
+        try {
+            $this->assertTrue(Actualizador::firmaValida($this->zip, $firma, $this->clavePublica));
+            $this->assertFalse(Actualizador::firmaValida($this->zip, $conOtraClave, $this->clavePublica));
+
+            file_put_contents($this->zip, 'x', FILE_APPEND);
+            $this->assertFalse(Actualizador::firmaValida($this->zip, $firma, $this->clavePublica));
+        } finally {
+            ParagonIE_Sodium_Compat::$disableFallbackForUnitTests = false;
+        }
     }
 
     public function test_rechaza_firmas_vacias_o_mal_formadas(): void

@@ -6,16 +6,18 @@ use FilesystemIterator;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use ParagonIE_Sodium_Compat;
 use PharData;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+use SodiumException;
 use Throwable;
 use ZipArchive;
 
 /**
  * Actualización desde Configuración, sin FTP: descarga el zip de la última release de GitHub, verifica su
- * firma ed25519 (con sodium u openssl), lo extrae en storage/app/actualizacion y deja un plan que ejecuta public/actualizar.php,
+ * firma ed25519 (con sodium_compat), lo extrae en storage/app/actualizacion y deja un plan que ejecuta public/actualizar.php,
  * que sustituye las carpetas de código sin cargar Laravel. La versión sustituida queda en
  * storage/app/actualizacion/anterior para poder restaurarla.
  */
@@ -31,8 +33,6 @@ class Actualizador
     private const BYTES_FIRMA = 64;
 
     private const BYTES_CLAVE = 32;
-
-    private const DER_CLAVE_ED25519 = '302a300506032b6570032100';
 
     private const MARCA_INICIO = '# BEGIN MDMG Soporte';
 
@@ -58,10 +58,6 @@ class Actualizador
 
         if (! class_exists(ZipArchive::class) && ! class_exists(PharData::class)) {
             $pendientes[] = 'Falta la extensión «zip» de PHP.';
-        }
-
-        if (! function_exists('sodium_crypto_sign_verify_detached') && ! defined('OPENSSL_KEYTYPE_ED25519')) {
-            $pendientes[] = 'Falta la extensión «openssl» de PHP, necesaria para verificar la firma.';
         }
 
         if (blank(config('app.clave_firma'))) {
@@ -131,10 +127,11 @@ class Actualizador
     }
 
     /**
-     * La firma cubre el SHA-256 del zip, así no hace falta cargarlo entero en memoria. Se verifica con
-     * sodium o, si el hosting no la tiene, con openssl (ed25519 desde PHP 8.4; Laravel ya exige openssl).
+     * La firma cubre el SHA-256 del zip, así no hace falta cargarlo entero en memoria. sodium_compat usa la
+     * extensión sodium si existe y, si no, su ed25519 en PHP puro: openssl no sirve de alternativa porque
+     * PHP solo expone ed25519 compilado contra OpenSSL 3 (los cPanel con OpenSSL 1.1.1 no lo tienen).
      */
-    public static function firmaValida(string $zip, string $firma, string $clavePublica, ?bool $conSodium = null): bool
+    public static function firmaValida(string $zip, string $firma, string $clavePublica): bool
     {
         $firma = base64_decode(trim($firma), true);
         $clave = base64_decode($clavePublica, true);
@@ -146,16 +143,11 @@ class Actualizador
 
         $mensaje = hash_file('sha256', $zip, true);
 
-        if ($conSodium ?? function_exists('sodium_crypto_sign_verify_detached')) {
-            return sodium_crypto_sign_verify_detached($firma, $mensaje, $clave);
+        try {
+            return ParagonIE_Sodium_Compat::crypto_sign_verify_detached($firma, $mensaje, $clave);
+        } catch (SodiumException) {
+            return false;
         }
-
-        // Clave ed25519 en bruto → PEM (cabecera DER SubjectPublicKeyInfo de ed25519 + los 32 bytes).
-        $pem = "-----BEGIN PUBLIC KEY-----\n"
-            .chunk_split(base64_encode(hex2bin(self::DER_CLAVE_ED25519).$clave), 64, "\n")
-            ."-----END PUBLIC KEY-----\n";
-
-        return openssl_verify($mensaje, $firma, $pem, 0) === 1;
     }
 
     public static function extraer(string $version): void

@@ -40,7 +40,7 @@ Para las notificaciones por email y Slack hace falta un cron que ejecute cada mi
 
 Cuando hay una release nueva, en **Configuración** aparece el botón **Actualizar a vX.Y.Z**. Por pasos, y sin salir de la página:
 
-1. comprueba el servidor (extensiones `zip` y `sodium`, 300 MB libres y permisos de escritura sobre las carpetas de la app);
+1. comprueba el servidor (extensión `zip`, 300 MB libres y permisos de escritura sobre las carpetas de la app);
 2. descarga el zip de la release de GitHub;
 3. verifica su firma con la clave pública de `config/app.php` (si no coincide, se descarta y no se cambia nada);
 4. lo extrae en `app/storage/app/actualizacion`;
