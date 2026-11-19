@@ -13,9 +13,9 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Cola de emails de notificación. Los emails se renderizan al encolarse y se
- * guardan en la tabla `notificaciones`; el comando `notificaciones:enviar`
- * (programado cada minuto) los envía y registra el resultado.
+ * Cola de notificaciones (email, Slack y push). Los emails se renderizan al
+ * encolarse y se guardan en la tabla `notificaciones`; el comando
+ * `notificaciones:enviar` (programado cada minuto) los envía y registra el resultado.
  */
 class NotificacionService
 {
@@ -23,8 +23,8 @@ class NotificacionService
 
     /**
      * @param  array{evento?: ?string, nombre: string, parrafos: array<string>, cita?: ?string, adjuntos?: ?array<string>, boton?: ?array{url: string, texto: string}}  $contenido
-     *         Los párrafos se insertan como HTML: escapa con e() cualquier dato de usuario.
-     *         La cita es el HTML del mensaje del ticket y se sanea aquí.
+     *                                                                                                                                                                              Los párrafos se insertan como HTML: escapa con e() cualquier dato de usuario.
+     *                                                                                                                                                                              La cita es el HTML del mensaje del ticket y se sanea aquí.
      */
     public static function encolar(
         string $tipo,
@@ -80,6 +80,32 @@ class NotificacionService
     }
 
     /**
+     * Encola una notificación push para los navegadores del usuario. No se encola
+     * si no ha activado los avisos en ningún navegador.
+     */
+    public static function encolarPush(string $tipo, User $user, string $titulo, string $cuerpo, string $url, ?Ticket $ticket = null): ?Notificacion
+    {
+        if (! $user->pushSuscripciones()->exists()) {
+            return null;
+        }
+
+        return Notificacion::create([
+            'tipo' => $tipo,
+            'canal' => 'push',
+            'asunto' => Str::limit($titulo, 250),
+            'payload' => PushService::payload(
+                titulo: $titulo,
+                cuerpo: $cuerpo,
+                url: $url,
+                tag: $ticket ? "ticket-{$ticket->id}" : null,
+            ),
+            'estado' => NotificacionEstado::EnCola,
+            'ticket_id' => $ticket?->id,
+            'user_id' => $user->id,
+        ]);
+    }
+
+    /**
      * Notificaciones pendientes: las nuevas y las fallidas que aún tienen intentos.
      */
     public static function pendientes(int $limite)
@@ -100,9 +126,11 @@ class NotificacionService
         $notificacion->increment('intentos');
 
         try {
-            $notificacion->esSlack()
-                ? self::enviarSlack($notificacion)
-                : Mail::to($notificacion->email_destinatario)->send(new NotificacionEmail($notificacion));
+            match ($notificacion->canal) {
+                'slack' => self::enviarSlack($notificacion),
+                'push' => PushService::enviar($notificacion),
+                default => Mail::to($notificacion->email_destinatario)->send(new NotificacionEmail($notificacion)),
+            };
 
             $notificacion->update([
                 'estado' => NotificacionEstado::Enviado,

@@ -11,6 +11,7 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -41,6 +42,8 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([
                 AccountWidget::class,
             ])
+            // Campana para activar las notificaciones push de tickets urgentes.
+            ->renderHook(PanelsRenderHook::USER_MENU_BEFORE, fn () => view('filament.push-notificaciones'))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

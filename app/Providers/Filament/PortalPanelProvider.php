@@ -10,6 +10,7 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -35,6 +36,8 @@ class PortalPanelProvider extends PanelProvider
             ->pages([
                 VerManual::class,
             ])
+            // Campana para activar las notificaciones push de tickets urgentes.
+            ->renderHook(PanelsRenderHook::USER_MENU_BEFORE, fn () => view('filament.push-notificaciones'))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

@@ -51,6 +51,9 @@ class TicketPrioridadResource extends Resource
             Toggle::make('es_default')
                 ->label('Por defecto')
                 ->helperText('Se asigna a los tickets nuevos.'),
+            Toggle::make('es_urgente')
+                ->label('Urgente')
+                ->helperText('Avisa con notificaciones push al crear el ticket y en cada respuesta.'),
         ]);
     }
 
@@ -65,6 +68,9 @@ class TicketPrioridadResource extends Resource
                     ->sortable(),
                 IconColumn::make('es_default')
                     ->label('Por defecto')
+                    ->boolean(),
+                IconColumn::make('es_urgente')
+                    ->label('Urgente (push)')
                     ->boolean(),
                 TextColumn::make('tickets_count')
                     ->label('Tickets')

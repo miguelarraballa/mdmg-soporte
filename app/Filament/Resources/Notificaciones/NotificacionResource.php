@@ -90,12 +90,17 @@ class NotificacionResource extends Resource
                     ->fontFamily('mono')
                     ->extraAttributes(['style' => 'white-space: pre-wrap']),
             ]),
-            Section::make('Contenido')->visible(fn (Notificacion $record) => ! $record->esSlack())->schema([
+            Section::make('Notificación push')->visible(fn (Notificacion $record) => $record->esPush())->schema([
+                TextEntry::make('payload.title')->label('Título'),
+                TextEntry::make('payload.body')->label('Texto'),
+                TextEntry::make('payload.url')->label('Enlace')->url(fn (?string $state) => $state),
+            ]),
+            Section::make('Contenido')->visible(fn (Notificacion $record) => ! $record->esSlack() && ! $record->esPush())->schema([
                 TextEntry::make('cuerpo_html')
                     ->hiddenLabel()
                     // Vista previa aislada en un iframe para que los estilos del email no afecten al panel.
                     ->state(fn (Notificacion $record) => new HtmlString(
-                        '<iframe sandbox srcdoc="' . e($record->cuerpo_html) . '" style="width:100%;height:520px;border:0;border-radius:8px;background:#fff"></iframe>'
+                        '<iframe sandbox srcdoc="'.e($record->cuerpo_html).'" style="width:100%;height:520px;border:0;border-radius:8px;background:#fff"></iframe>'
                     )),
             ]),
         ])->columns(1);
@@ -111,8 +116,16 @@ class NotificacionResource extends Resource
                     ->sortable(),
                 TextColumn::make('canal')
                     ->badge()
-                    ->formatStateUsing(fn (string $state) => $state === 'slack' ? 'Slack' : 'Email')
-                    ->color(fn (string $state) => $state === 'slack' ? 'info' : 'gray'),
+                    ->formatStateUsing(fn (string $state) => match ($state) {
+                        'slack' => 'Slack',
+                        'push' => 'Push',
+                        default => 'Email',
+                    })
+                    ->color(fn (string $state) => match ($state) {
+                        'slack' => 'info',
+                        'push' => 'warning',
+                        default => 'gray',
+                    }),
                 TextColumn::make('email_destinatario')
                     ->label('Destinatario')
                     ->state(fn (Notificacion $record) => $record->destino())
@@ -133,7 +146,7 @@ class NotificacionResource extends Resource
                 SelectFilter::make('estado')
                     ->options(NotificacionEstado::class),
                 SelectFilter::make('canal')
-                    ->options(['email' => 'Email', 'slack' => 'Slack']),
+                    ->options(['email' => 'Email', 'slack' => 'Slack', 'push' => 'Push']),
             ])
             ->recordActions([
                 ViewAction::make()->modalWidth('4xl'),

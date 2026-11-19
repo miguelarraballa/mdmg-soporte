@@ -37,14 +37,23 @@ class Notificacion extends Model
         return $this->canal === 'slack';
     }
 
+    public function esPush(): bool
+    {
+        return $this->canal === 'push';
+    }
+
     /**
      * Destinatario legible para el panel.
      */
     public function destino(): string
     {
-        return $this->esSlack()
-            ? 'Slack · ' . ($this->user?->name ?? 'usuario eliminado')
-            : (string) $this->email_destinatario;
+        $usuario = $this->user?->name ?? 'usuario eliminado';
+
+        return match ($this->canal) {
+            'slack' => "Slack · {$usuario}",
+            'push' => "Push · {$usuario}",
+            default => (string) $this->email_destinatario,
+        };
     }
 
     public function ticket(): BelongsTo

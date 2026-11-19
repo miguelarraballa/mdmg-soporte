@@ -3,6 +3,7 @@
 use App\Http\Controllers\AdjuntoController;
 use App\Http\Controllers\InstalacionController;
 use App\Http\Controllers\ManualController;
+use App\Http\Controllers\PushSuscripcionController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/portal');
@@ -17,6 +18,12 @@ Route::get('/manuales/{manual}', ManualController::class)
     ->middleware('auth')
     ->whereNumber('manual')
     ->name('manuales.contenido');
+
+// Suscripción push del navegador (campana del panel, resources/views/filament/push-notificaciones.blade.php).
+Route::middleware('auth')->group(function () {
+    Route::post('/push/suscripcion', [PushSuscripcionController::class, 'store'])->name('push.suscribir');
+    Route::delete('/push/suscripcion', [PushSuscripcionController::class, 'destroy'])->name('push.desuscribir');
+});
 
 // Solo accesible sin instalar (middleware ComprobarInstalacion).
 Route::get('/instalar', [InstalacionController::class, 'create'])->name('instalacion');

@@ -67,6 +67,11 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(Ticket::class);
     }
 
+    public function pushSuscripciones(): HasMany
+    {
+        return $this->hasMany(PushSuscripcion::class);
+    }
+
     public function servicios(): BelongsToMany
     {
         return $this->belongsToMany(Servicio::class)->withTimestamps();

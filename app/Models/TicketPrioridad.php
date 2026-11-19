@@ -14,11 +14,13 @@ class TicketPrioridad extends Model
         'color',
         'orden',
         'es_default',
+        'es_urgente',
     ];
 
     protected $casts = [
         'orden' => 'integer',
         'es_default' => 'bool',
+        'es_urgente' => 'bool',
     ];
 
     public function tickets(): HasMany

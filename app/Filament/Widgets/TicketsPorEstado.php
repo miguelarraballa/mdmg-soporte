@@ -13,6 +13,11 @@ class TicketsPorEstado extends StatsOverviewWidget
 
     protected ?string $heading = 'Tickets por estado';
 
+    /**
+     * Se actualiza solo cada 5 minutos, sin recargar la página.
+     */
+    protected ?string $pollingInterval = '300s';
+
     protected function getStats(): array
     {
         return TicketEstado::query()

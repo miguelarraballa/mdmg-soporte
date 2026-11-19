@@ -100,7 +100,8 @@ class Marca
 
     public static function restaurar(): void
     {
-        Ajuste::query()->delete();
+        // Solo los ajustes de marca: en la tabla hay otros, como las claves VAPID de las notificaciones push.
+        Ajuste::whereIn('clave', array_keys(self::DEFAULTS))->delete();
         self::olvidar();
     }
 

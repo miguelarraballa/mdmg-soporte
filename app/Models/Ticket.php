@@ -83,7 +83,7 @@ class Ticket extends Model
     public function asuntoEmail(): string
     {
         return collect([
-            '[' . config('app.name') . " TICKET #{$this->numero()}]",
+            '['.config('app.name')." TICKET #{$this->numero()}]",
             $this->servicio?->nombre,
             $this->asunto,
         ])->filter()->implode(' - ');
@@ -92,6 +92,14 @@ class Ticket extends Model
     public function scopeAbiertos(Builder $query): Builder
     {
         return $query->whereHas('estado', fn ($q) => $q->where('es_cierre', false));
+    }
+
+    /**
+     * Los tickets urgentes avisan también por notificación push.
+     */
+    public function esUrgente(): bool
+    {
+        return (bool) $this->prioridad?->es_urgente;
     }
 
     public function estaCerrado(): bool
